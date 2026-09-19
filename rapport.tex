@@ -1,0 +1,229 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{float}
+\usepackage{enumitem}
+
+\geometry{margin=2.5cm}
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue}
+
+\title{\textbf{Implémentation de l'algorithme des Nuées dynamiques}}
+\author{Master 1 -- Intelligence Artificielle et Data Science}
+\date{\today}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Introduction}
+
+La classification non supervisée cherche à regrouper des individus en classes homogènes sans disposer de classes connues à l'avance. Parmi les méthodes de classification, les Nuées dynamiques proposées par Edwin Diday en 1971 occupent une place importante car elles généralisent l'idée de représentation d'une classe par un prototype.
+
+Le principe général est itératif : une représentation initiale des classes est construite, les individus sont affectés à la représentation qui leur est la plus proche, puis les représentations sont recalculées à partir des individus affectés. Le processus est répété jusqu'à stabilisation.
+
+Le présent travail a pour objectif d'implémenter ce principe \textbf{from scratch}, sans utiliser une implémentation de clustering de scikit-learn, et de permettre à l'utilisateur de choisir plusieurs formes de représentation d'une nuée.
+
+\section{Problématique}
+
+Le k-means représente chaque classe par un seul centroïde. Cette représentation est simple et efficace, mais elle résume parfois de manière trop restrictive la structure des données.
+
+Les Nuées dynamiques proposent un cadre plus général dans lequel une classe peut être représentée par plusieurs éléments ou par une structure. Dans notre application, cinq choix sont proposés :
+
+\begin{enumerate}
+    \item un point ;
+    \item un ensemble de points représentatifs ;
+    \item des axes ou composantes factorielles ;
+    \item une distribution de probabilités ;
+    \item une structure représentative.
+\end{enumerate}
+
+Le choix \textit{point} permet notamment de retrouver le fonctionnement du k-means comme cas particulier.
+
+\section{Principe général de l'algorithme}
+
+Soit un ensemble d'individus
+\[
+X = \{x_1,\ldots,x_n\}, \qquad x_i\in\mathbb{R}^p
+\]
+et $K$ classes.
+
+L'algorithme alterne deux opérations principales :
+
+\begin{enumerate}
+    \item \textbf{Affectation :} chaque individu est affecté à la représentation de classe minimisant une distance ou un critère de proximité ;
+    \item \textbf{Mise à jour :} la représentation de chaque classe est recalculée à partir des individus qui lui sont affectés.
+\end{enumerate}
+
+On note $R_k$ la représentation de la classe $k$. L'affectation peut s'écrire :
+\[
+c_i = \arg\min_{k\in\{1,\ldots,K\}} d(x_i,R_k).
+\]
+
+Le processus s'arrête lorsque les affectations deviennent stables ou lorsque la variation de la fonction objectif devient inférieure à un seuil $\varepsilon$.
+
+\section{Lien avec le k-means}
+
+Dans le k-means, chaque classe est représentée par un unique centroïde :
+\[
+\mu_k = \frac{1}{|C_k|}\sum_{x_i\in C_k}x_i.
+\]
+
+La distance est généralement la distance euclidienne au carré :
+\[
+d(x_i,\mu_k)=\|x_i-\mu_k\|^2.
+\]
+
+Dans notre implémentation, le mode \textbf{point} contient exactement un prototype par classe. Il constitue donc le cas particulier dans lequel la représentation d'une nuée est réduite à un seul point.
+
+La différence essentielle avec le mode \textbf{points} est que celui-ci conserve plusieurs prototypes pour caractériser une même classe.
+
+\section{Représentations implémentées}
+
+\subsection{Point}
+
+Chaque classe possède un prototype unique, calculé comme la moyenne des individus de la classe. Ce mode correspond au cas particulier de type k-means.
+
+\subsection{Ensemble de points représentatifs}
+
+Chaque classe est représentée par plusieurs prototypes. Pour une observation $x$, nous utilisons la distance au prototype le plus proche :
+\[
+d(x,R_k)=\min_j\|x-p_{kj}\|^2.
+\]
+
+Les prototypes sont ensuite recalculés par une petite procédure itérative interne de type k-means appliquée uniquement aux individus de la classe.
+
+\subsection{Axes factoriels}
+
+Dans ce mode, une classe est représentée par une moyenne $\mu_k$ et plusieurs axes principaux obtenus par décomposition spectrale de la matrice de covariance.
+
+Pour un point $x$, on projette $x-\mu_k$ sur le sous-espace engendré par les axes. La distance utilisée est le carré de la norme du résidu :
+\[
+d(x,R_k)=\|(x-\mu_k)-AA^T(x-\mu_k)\|^2.
+\]
+
+Cette représentation permet de tenir compte d'une direction ou d'un sous-espace caractéristique de la classe.
+
+\subsection{Distribution de probabilités}
+
+Une classe est représentée par une distribution gaussienne définie par une moyenne $\mu_k$ et une matrice de covariance $\Sigma_k$.
+
+Nous utilisons une distance de Mahalanobis :
+\[
+d(x,R_k)=(x-\mu_k)^T\Sigma_k^{-1}(x-\mu_k).
+\]
+
+Une petite régularisation diagonale est ajoutée à la covariance afin d'éviter les problèmes d'inversion lorsque la matrice est singulière.
+
+\subsection{Structure représentative}
+
+La structure combine plusieurs prototypes et une mesure de dispersion de la classe. Le critère utilisé est :
+\[
+d(x,R_k)=\min_j\|x-p_{kj}\|^2+
+\lambda(x-\bar p_k)^T\Sigma_k^{-1}(x-\bar p_k),
+\]
+avec $\lambda=0.25$ dans l'implémentation.
+
+Cette représentation cherche donc à tenir compte à la fois de la proximité locale avec des prototypes et de la forme globale du nuage.
+
+\section{Architecture de l'implémentation}
+
+Le projet est organisé comme suit :
+
+\begin{verbatim}
+nuees_dynamiques/
+|-- src/
+|   |-- dynamic_clouds.py
+|   |-- main.py
+|   |-- app.py
+|-- tests/
+|   |-- test_dynamic_clouds.py
+|-- data/
+|-- requirements.txt
+|-- README.md
+|-- rapport.tex
+\end{verbatim}
+
+Le fichier \texttt{dynamic\_clouds.py} contient le coeur de l'algorithme. Le fichier \texttt{app.py} fournit une interface Streamlit permettant de choisir la représentation et d'observer les résultats.
+
+\section{Algorithme}
+
+\begin{enumerate}
+    \item Charger ou générer les données.
+    \item Choisir le nombre de classes $K$.
+    \item Choisir la représentation de la nuée.
+    \item Initialiser les représentations.
+    \item Calculer les distances entre chaque individu et chaque représentation.
+    \item Affecter chaque individu à la classe la plus proche.
+    \item Recalculer les représentations des classes.
+    \item Calculer le critère global.
+    \item Répéter jusqu'à stabilisation ou atteinte du nombre maximal d'itérations.
+\end{enumerate}
+
+\section{Expérimentation}
+
+Pour l'expérimentation, un jeu de données synthétique bidimensionnel est généré à partir de trois groupes de points. Cette configuration permet de visualiser directement les classes obtenues.
+
+Les cinq représentations peuvent être testées avec les commandes :
+
+\begin{verbatim}
+python src/main.py --representation point
+python src/main.py --representation points
+python src/main.py --representation axes
+python src/main.py --representation distribution
+python src/main.py --representation structure
+\end{verbatim}
+
+Une interface graphique peut être lancée avec :
+
+\begin{verbatim}
+streamlit run src/app.py
+\end{verbatim}
+
+\section{Discussion}
+
+Le mode point fournit une représentation compacte et simple. Il est particulièrement adapté lorsque la structure de chaque classe est relativement bien résumée par son centre.
+
+Le mode points permet une description plus riche car plusieurs prototypes peuvent représenter différentes zones d'une même classe.
+
+Le mode axes apporte une information géométrique sur les directions principales de variation. Le mode distribution ajoute une information probabiliste et prend en compte la covariance. Enfin, le mode structure combine plusieurs éléments afin de mieux caractériser simultanément la proximité locale et la dispersion.
+
+Ces modes ne doivent pas être interprétés comme des algorithmes totalement indépendants : ils suivent le même schéma général des Nuées dynamiques, mais utilisent des représentations et des critères de proximité différents.
+
+\section{Complexité}
+
+Pour $n$ individus, $K$ classes et $p$ variables, l'étape d'affectation est de l'ordre de $O(nKp)$ pour les représentations simples. Les représentations nécessitant une covariance ou une décomposition spectrale ajoutent un coût lié à la dimension $p$ et au calcul des paramètres de chaque classe.
+
+Le nombre total d'itérations dépend de la stabilisation des affectations.
+
+\section{Limites}
+
+L'implémentation constitue une version pédagogique des Nuées dynamiques. En particulier, la notion de ``structure représentative'' est opérationnalisée ici par une combinaison de plusieurs prototypes et d'une matrice de dispersion. D'autres structures peuvent être définies selon le domaine d'application.
+
+De même, la représentation par axes utilise une ACP numérique calculée à partir des données de chaque classe. Le but est de montrer le principe de représentation structurée et non de reproduire toutes les variantes de la méthode générale des Nuées dynamiques.
+
+\section{Conclusion}
+
+Ce travail montre que le principe des Nuées dynamiques peut être implémenté sans dépendre d'une bibliothèque de clustering. Le point central est de séparer le mécanisme général d'affectation/mise à jour de la représentation choisie pour chaque classe.
+
+Le mode point correspond au cas particulier du k-means, tandis que les autres modes permettent de représenter une classe par plusieurs prototypes, un sous-espace factoriel, une distribution ou une structure combinée.
+
+Le projet est accompagné d'une interface de démonstration, de tests et d'un dépôt GitHub destiné à faciliter la reproduction de l'expérimentation.
+
+\section*{Références}
+
+\begin{itemize}
+    \item Diday, E. (1971). Travaux fondateurs sur les Nuées dynamiques et la classification automatique.
+    \item Diday, E. et Simon, J.C. Travaux sur les méthodes de classification automatique et les représentations des classes.
+\end{itemize}
+
+\end{document}
